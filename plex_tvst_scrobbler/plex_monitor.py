@@ -85,8 +85,8 @@ def fetch_metadata(l_id, config):
     ''' retrieves the metadata information from the Plex media Server api. '''
 
     logger = logging.getLogger(__name__)
-    url = '{url}/library/metadata/{l_id}'.format(url=config.get('plex-tvst-scrobbler',
-      'mediaserver_url'), l_id=l_id)
+    url = '{url}/library/metadata/{l_id}?X-Plex-Token={plex_token}'.format(url=config.get('plex-tvst-scrobbler',
+      'mediaserver_url'), l_id=l_id, plex_token=config.get('plex-tvst-scrobbler','plex_token'))
     logger.info('Fetching library metadata from {url}'.format(url=url))
 
     # fail if request is greater than 2 seconds.
