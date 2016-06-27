@@ -70,7 +70,7 @@ class Tvst(object):
 
         return res
 
-    def scrobble(self, show_id, season_number, number):
+    def scrobble(self, show_id, season_number, number, played):
 
         session = self.get_session()
         self.logger.info(u'submitting {show_id} - S{season_number}E{number} to tvshowtime.com.'.format(
@@ -82,9 +82,12 @@ class Tvst(object):
             'season_number': season_number.zfill(2),
             'number': number.zfill(2)
         }
-        url = urlparse.urlunparse(('https',
-                                  'api.tvshowtime.com',
-                                  '/v1/checkin', '', '', ''))
+
+        action_type = '/v1/checkin'
+        if not played:
+            action_type = '/v1/checkout'
+
+        url = urlparse.urlunparse(('https','api.tvshowtime.com', action_type, '', '', ''))
 
         try:
             res = self._do_tvst_post(url, urllib.urlencode(args))
