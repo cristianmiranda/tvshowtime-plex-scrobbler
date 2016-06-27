@@ -9,26 +9,76 @@ import time
 
 from tvst import Tvst
 
-def parse_line(log_line):
+last_played = None
+last_unplayed = None
+
+def parse_line(config, log_line):
     ''' Matches known TV shows metadata log entries entries against input (log_line)
 
         :param log_line: plex media server log line
         :type log_line: string
-        :returns: plex media server  metadata id
-        :rtype: integer (or None) '''
+        :returns: Nothing '''
 
     logger = logging.getLogger(__name__)
 
-    REGEX = [
-        re.compile('.*Updated play state for /library/metadata/([0-9]+).*')
+    PLAYED_REGEX = [
+        re.compile('.*Updated play state for /library/metadata/([0-9]+).*'),
+        re.compile('.*Library item ([0-9]+).* got played by account')
     ]
 
-    for regex in REGEX:
+    UNPLAYED_REGEX = [
+        re.compile('.*Library item ([0-9]+).* got unplayed by account')
+    ]
+
+    for regex in PLAYED_REGEX:
         m = regex.match(log_line)
 
         if m:
             logger.info('Found played TV show and extracted library id \'{l_id}\' from plex log '.format(l_id=m.group(1)))
-            return m.group(1)
+            process_item(config, m.group(1), True)
+
+    for regex in UNPLAYED_REGEX:
+        m = regex.match(log_line)
+
+        if m:
+            logger.info('Found unplayed TV show and extracted library id \'{l_id}\' from plex log '.format(l_id=m.group(1)))
+            process_item(config, m.group(1), False)
+
+
+def process_item(config, item, played):
+    ''' Processes played / unplayed item scrobbling TVShowTime
+
+        :param item: played / unplayed item id
+        :type item: integer 
+        :param played: flag to know if item has been played or unplayed
+        :type played: boolean '''
+
+    global last_played
+    global last_unplayed
+    logger = logging.getLogger(__name__)
+
+    # when playing via a client, log lines are duplicated (seen via iOS)
+    # this skips dupes. Note: will also miss songs that have been repeated
+    if (played and item == last_played) or (not played and item == last_unplayed):
+        logger.warn('Dupe detection : {0}, not submitting'.format(item))
+        return
+
+    metadata = fetch_metadata(item, config)
+
+    if not metadata: return
+
+    # submit to tvshowtime.com
+    tvst = Tvst(config)
+    a = tvst.scrobble(metadata['show_id'], metadata['season_number'],
+            metadata['number'], played)
+
+    # scrobble was not successful , FIXME: do something?
+    # if not a:
+
+    if played:
+        last_played = item
+    else:
+        last_unplayed = item
 
 
 def fetch_metadata(l_id, config):
@@ -91,7 +141,6 @@ def monitor_log(config):
 
     logger = logging.getLogger(__name__)
     st_mtime = False
-    last_played = None
 
     try:
         f = open(config.get('plex-tvst-scrobbler', 'mediaserver_log_location'))
@@ -132,26 +181,4 @@ def monitor_log(config):
         # based on a regex value. If we have a match, extract the media file
         # id and send it off to tvshowtime.com for scrobble.
         if line:
-            played = parse_line(line)
-
-            if not played: continue
-
-            # when playing via a client, log lines are duplicated (seen via iOS)
-            # this skips dupes. Note: will also miss songs that have been repeated
-            if played == last_played:
-                logger.warn('Dupe detection : {0}, not submitting'.format(last_played))
-                continue
-
-            metadata = fetch_metadata(played, config)
-
-            if not metadata: continue
-
-            # submit to tvshowtime.com
-            tvst = Tvst(config)
-            a = tvst.scrobble(metadata['show_id'], metadata['season_number'],
-                    metadata['number'])
-
-            # scrobble was not successful , FIXME: do something?
-            # if not a:
-
-            last_played = played
+            parse_line(config, line)
